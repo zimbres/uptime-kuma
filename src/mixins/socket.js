@@ -5,7 +5,7 @@ import Favico from "favico.js";
 import dayjs from "dayjs";
 import mitt from "mitt";
 
-import { DOWN, MAINTENANCE, PENDING, UP } from "../util.ts";
+import { DOWN, MAINTENANCE, PENDING, UP, UNKNOWN } from "../util.ts";
 import {
     getDevContainerServerHostname,
     isDevContainer,
@@ -212,6 +212,9 @@ export default {
                     this.heartbeatList[data.monitorID].shift();
                 }
 
+                // Update monitor's isUnknown status
+                this.updateMonitorUnknownStatus(data.monitorID, data.status);
+
                 // Add to important list if it is important
                 // Also toast
                 if (data.important) {
@@ -314,8 +317,22 @@ export default {
                         return null;
                     }
                 };
+
+                // Initialize isUnknown from server data
+                monitor.isUnknown = Boolean(monitor.is_unknown);
             });
             return data;
+        },
+
+        /**
+         * Update monitor's isUnknown status based on latest heartbeat
+         * @param {number} monitorID Monitor ID
+         * @param {number} status Heartbeat status
+         */
+        updateMonitorUnknownStatus(monitorID, status) {
+            if (this.monitorList[monitorID]) {
+                this.monitorList[monitorID].isUnknown = status === 4; // UNKNOWN = 4
+            }
         },
 
         /**
@@ -785,6 +802,11 @@ export default {
                         text: this.$t("statusMaintenance"),
                         color: "maintenance",
                     };
+                } else if (lastHeartBeat.status === UNKNOWN) {
+                    result[monitorID] = {
+                        text: this.$t("Unknown"),
+                        color: "secondary",
+                    };
                 } else {
                     result[monitorID] = unknown;
                 }
@@ -820,6 +842,8 @@ export default {
                         result.pending++;
                     } else if (beat.status === MAINTENANCE) {
                         result.maintenance++;
+                    } else if (beat.status === UNKNOWN) {
+                        result.unknown++;
                     } else {
                         result.unknown++;
                     }

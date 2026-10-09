@@ -834,6 +834,17 @@ let needSetup = false;
                     }
                 }
 
+                // Check if Dependency is Descendant or self (would cause endless loop)
+                if (monitor.dependency !== null) {
+                    if (monitor.dependency === monitor.id) {
+                        throw new Error("A monitor cannot depend on itself");
+                    }
+                    const childIDs = await Monitor.getAllChildrenIDs(monitor.id);
+                    if (childIDs.includes(monitor.dependency)) {
+                        throw new Error("A monitor cannot depend on its descendant");
+                    }
+                }
+
                 // Remove children if monitor type has changed (from group to non-group)
                 if (bean.type === "group" && monitor.type !== bean.type) {
                     removeGroupChildren = true;
@@ -847,6 +858,7 @@ let needSetup = false;
                 bean.name = monitor.name;
                 bean.description = monitor.description;
                 bean.parent = monitor.parent;
+                bean.dependency = monitor.dependency;
                 bean.type = monitor.type;
                 bean.subtype = monitor.subtype;
                 bean.url = monitor.url;

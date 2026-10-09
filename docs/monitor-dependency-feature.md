@@ -347,7 +347,10 @@ if (this.is_unknown !== (bean.status === UNKNOWN)) {
     await R.exec("UPDATE monitor SET is_unknown = ? WHERE id = ?", [this.is_unknown ? 1 : 0, this.id]);
     // Notify frontend of monitor update
     const server = require("../uptime-kuma-server").UptimeKumaServer.getInstance();
-    await server.sendUpdateMonitorIntoList(this.user_id, this.id);
+    const list = await server.getMonitorJSONList(this.user_id, this.id);
+    if (list && list[this.id]) {
+        server.io.to(this.user_id).emit("updateMonitorIntoList", list);
+    }
 }
 ```
 
@@ -359,7 +362,7 @@ if (this.is_unknown !== (bean.status === UNKNOWN)) {
 The `assignMonitorUrlParser()` method initializes `monitor.isUnknown = Boolean(monitor.is_unknown)` from server data when the monitor list is received.
 
 **Frontend notification via `updateMonitorIntoList`:**
-When the backend updates `is_unknown` in the database, it calls `server.sendUpdateMonitorIntoList(user_id, monitor_id)` which emits the `updateMonitorIntoList` socket event. The frontend handler updates the monitor in the reactive `monitorList`:
+When the backend updates `is_unknown` in the database, it calls `server.getMonitorJSONList(user_id, monitor_id)` to get the updated monitor data and emits the `updateMonitorIntoList` socket event directly via `server.io.to(user_id).emit()`. The frontend handler updates the monitor in the reactive `monitorList`:
 
 ```javascript
 socket.on("updateMonitorIntoList", (data) => {
@@ -498,7 +501,7 @@ monitor.isUnknown  // true/false - reactive, updates automatically on heartbeat
 2. Update `server/model/monitor.js`:
    - Add `isUnknown: Boolean(this.is_unknown)` to `toJSON()` output
    - After each heartbeat, update `monitor.is_unknown` in DB based on heartbeat status
-   - Send `updateMonitorIntoList` socket event to notify frontend
+   - Get updated monitor via `server.getMonitorJSONList(user_id, monitor_id)` and emit `updateMonitorIntoList` socket event via `server.io.to(user_id).emit()` to notify frontend
 3. Update `src/mixins/socket.js`:
    - `assignMonitorUrlParser()`: Initialize `monitor.isUnknown = Boolean(monitor.is_unknown)` from server data
    - Add `updateMonitorUnknownStatus(monitorID, status)` method

@@ -2263,6 +2263,18 @@
                                 />
                             </div>
 
+                            <!-- Dependency Monitor -->
+                            <div class="my-3">
+                                <label for="monitorDependencySelector" class="form-label">{{ $t("Dependency Monitor") }}</label>
+                                <ActionSelect
+                                    id="monitorDependencySelector"
+                                    v-model="monitor.dependency"
+                                    :options="dependencyMonitorOptionsList"
+                                    :disabled="sortedMonitorList.length === 0"
+                                />
+                                <div class="form-text">{{ $t("If this monitor is down or paused, the current monitor will show as Unknown") }}</div>
+                            </div>
+
                             <!-- Description -->
                             <div class="my-3">
                                 <label for="description" class="form-label">{{ $t("Description") }}</label>
@@ -3358,6 +3370,7 @@ const monitorDefaults = {
     type: "http",
     name: "",
     parent: null,
+    dependency: null,
     url: defaultValueList.http.url,
     wsSubprotocol: "",
     method: "GET",
@@ -3723,6 +3736,59 @@ message HealthCheckResponse {
                 ].concat(list);
             }
 
+            return list;
+        },
+
+        /**
+         * Generates a sorted list of all monitors (including groups) excluding self and descendants
+         * @returns {Array} Sorted monitor list
+         */
+        sortedMonitorList() {
+            let result = Object.values(this.$root.monitorList);
+            result = result.filter(
+                (monitor) =>
+                    monitor.id !== this.monitor.id &&
+                    !this.monitor.childrenIDs?.includes(monitor.id)
+            );
+            result.sort((m1, m2) => {
+                if (m1.active !== m2.active) {
+                    if (m1.active === 0) {
+                        return 1;
+                    }
+                    if (m2.active === 0) {
+                        return -1;
+                    }
+                }
+                if (m1.weight !== m2.weight) {
+                    if (m1.weight > m2.weight) {
+                        return -1;
+                    }
+                    if (m1.weight < m2.weight) {
+                        return 1;
+                    }
+                }
+                return m1.pathName.localeCompare(m2.pathName);
+            });
+            return result;
+        },
+
+        /**
+         * Generates the dependency monitor options list based on the sorted monitor list.
+         * @returns {Array} The dependency monitor options list.
+         */
+        dependencyMonitorOptionsList() {
+            let list = [];
+            if (this.sortedMonitorList.length === 0) {
+                list = [{ label: this.$t("noMonitorMsg"), value: null }];
+            } else {
+                list = [
+                    { label: this.$t("None"), value: null },
+                    ...this.sortedMonitorList.map((monitor) => ({
+                        label: monitor.pathName,
+                        value: monitor.id,
+                    })),
+                ];
+            }
             return list;
         },
 

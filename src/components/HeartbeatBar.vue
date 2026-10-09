@@ -40,7 +40,7 @@
 
 <script>
 import dayjs from "dayjs";
-import { DOWN, UP, PENDING, MAINTENANCE } from "../util.ts";
+import { DOWN, UP, PENDING, MAINTENANCE, UNKNOWN } from "../util.ts";
 import Tooltip from "./Tooltip.vue";
 
 export default {
@@ -445,6 +445,8 @@ export default {
                     return `Pending at ${this.$root.datetime(beat.time)}`;
                 case MAINTENANCE:
                     return `Maintenance at ${this.$root.datetime(beat.time)}`;
+                case UNKNOWN:
+                    return `Unknown at ${this.$root.datetime(beat.time)}`;
                 default:
                     return "No data";
             }
@@ -650,6 +652,8 @@ export default {
                 return colors.pending;
             } else if (status === MAINTENANCE) {
                 return colors.maintenance;
+            } else if (status === UNKNOWN) {
+                return colors.empty;
             } else {
                 return colors.up;
             }

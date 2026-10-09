@@ -8,6 +8,7 @@ const {
     DOWN,
     PENDING,
     MAINTENANCE,
+    UNKNOWN,
     flipStatus,
     MIN_INTERVAL_SECOND,
     SQL_DATETIME_FORMAT,
@@ -130,6 +131,7 @@ class Monitor extends BeanModel {
             path,
             pathName,
             parent: this.parent,
+            dependency: this.dependency,
             childrenIDs: preloadData.childrenIDs.get(this.id) || [],
             url: this.url,
             wsIgnoreSecWebsocketAcceptHeader: this.getWsIgnoreSecWebsocketAcceptHeader(),
@@ -168,6 +170,7 @@ class Monitor extends BeanModel {
             notificationIDList: preloadData.notifications.get(this.id) || {},
             tags: preloadData.tags.get(this.id) || [],
             maintenance: preloadData.maintenanceStatus.get(this.id),
+            isUnknown: Boolean(this.is_unknown),
             mqttTopic: this.mqttTopic,
             mqttSuccessMessage: this.mqttSuccessMessage,
             mqttCheckType: this.mqttCheckType,
@@ -473,7 +476,11 @@ class Monitor extends BeanModel {
             }
 
             try {
-                if (await Monitor.isUnderMaintenance(this.id)) {
+                // Check if dependency is satisfied
+                if (!(await Monitor.isDependencySatisfied(this.id))) {
+                    bean.msg = "Dependency is down or paused";
+                    bean.status = UNKNOWN;
+                } else if (await Monitor.isUnderMaintenance(this.id)) {
                     bean.msg = "Monitor under maintenance";
                     bean.status = MAINTENANCE;
                 } else if (this.type === "http" || this.type === "keyword" || this.type === "json-query") {
@@ -1069,6 +1076,18 @@ class Monitor extends BeanModel {
             log.debug("monitor", `[${this.name}] Store`);
             await R.store(bean);
 
+            // Update monitor's is_unknown field based on heartbeat status
+            if (this.is_unknown !== (bean.status === UNKNOWN)) {
+                this.is_unknown = bean.status === UNKNOWN;
+                await R.exec("UPDATE monitor SET is_unknown = ? WHERE id = ?", [this.is_unknown ? 1 : 0, this.id]);
+                // Notify frontend of monitor update
+                const server = require("../uptime-kuma-server").UptimeKumaServer.getInstance();
+                const list = await server.getMonitorJSONList(this.user_id, this.id);
+                if (list && list[this.id]) {
+                    server.io.to(this.user_id).emit("updateMonitorIntoList", list);
+                }
+            }
+
             log.debug("monitor", `[${this.name}] prometheus.update`);
             const data24h = uptimeCalculator.get24Hour();
             const data30d = uptimeCalculator.get30Day();
@@ -1621,6 +1640,41 @@ class Monitor extends BeanModel {
         }
 
         return false;
+    }
+
+    /**
+     * Checks if the monitor's dependency is satisfied
+     * @param {number} monitorID ID of the monitor to check
+     * @returns {Promise<boolean>} Is the dependency satisfied (UP)?
+     */
+    static async isDependencySatisfied(monitorID) {
+        const monitor = await R.findOne("monitor", "id = ?", [monitorID]);
+
+        if (!monitor || !monitor.dependency) {
+            return true;
+        }
+
+        const dependency = await R.findOne("monitor", "id = ?", [monitor.dependency]);
+
+        if (!dependency) {
+            return true;
+        }
+
+        // Dependency must be active (not paused)
+        if (dependency.active !== 1) {
+            return false;
+        }
+
+        // Check if dependency monitor is running and UP
+        const server = require("../uptime-kuma-server").UptimeKumaServer.getInstance();
+        if (server.monitorList[dependency.id]) {
+            const lastHeartbeat = await R.findOne("heartbeat", "monitor_id = ? ORDER BY time DESC", [dependency.id]);
+            if (lastHeartbeat && lastHeartbeat.status !== 1) { // Not UP (includes DOWN, PENDING, MAINTENANCE, UNKNOWN)
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
