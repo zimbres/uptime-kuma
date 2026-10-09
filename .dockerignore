@@ -52,3 +52,16 @@ dist-ssr
 #.vscode
 
 ### End of .gitignore content
+
+# Additional exclusions for production build
+/AGENTS.md
+/CLAUDE.md
+/compose.yaml
+/.prettier*
+/.eslint*
+/.stylelint*
+/tsconfig*.json
+/docker
+/docs
+/public/index.html
+/.npmrc
