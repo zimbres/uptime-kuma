@@ -8,6 +8,7 @@ let monitorUptimeRatio = null;
 let monitorAverageResponseTimeSeconds = null;
 let monitorResponseTime = null;
 let monitorStatus = null;
+let commonLabels = [];
 
 class Prometheus {
     monitorLabelValues = {};
@@ -49,7 +50,7 @@ class Prometheus {
                 .sort(this.sortTags)
         );
 
-        const commonLabels = [
+        commonLabels = [
             ...tags,
             "monitor_id",
             "monitor_name",
@@ -143,6 +144,22 @@ class Prometheus {
     }
 
     /**
+     * Filter label values to only include labels that are in the initial labelset (commonLabels).
+     * This prevents errors when new tags are added after Prometheus initialization.
+     * @param {object} labels The labels to filter
+     * @returns {object} Filtered labels
+     */
+    filterLabels(labels) {
+        const filtered = {};
+        for (const key of Object.keys(labels)) {
+            if (commonLabels.includes(key)) {
+                filtered[key] = labels[key];
+            }
+        }
+        return filtered;
+    }
+
+    /**
      * Update the metrics page
      * @typedef {import("./uptime-calculator").UptimeDataResult} UptimeDataResult
      * @param {object} heartbeat Heartbeat details
@@ -151,6 +168,8 @@ class Prometheus {
      * @returns {void}
      */
     update(heartbeat, tlsInfo, uptime) {
+        const filteredLabels = this.filterLabels(this.monitorLabelValues);
+
         if (typeof tlsInfo !== "undefined") {
             try {
                 let isValid;
@@ -159,14 +178,14 @@ class Prometheus {
                 } else {
                     isValid = 0;
                 }
-                monitorCertIsValid.set(this.monitorLabelValues, isValid);
+                monitorCertIsValid.set(filteredLabels, isValid);
             } catch (e) {
                 log.error("prometheus", "Caught error", e);
             }
 
             try {
                 if (tlsInfo.certInfo != null) {
-                    monitorCertDaysRemaining.set(this.monitorLabelValues, tlsInfo.certInfo.daysRemaining);
+                    monitorCertDaysRemaining.set(filteredLabels, tlsInfo.certInfo.daysRemaining);
                 }
             } catch (e) {
                 log.error("prometheus", "Caught error", e);
@@ -176,7 +195,7 @@ class Prometheus {
         if (uptime) {
             try {
                 monitorAverageResponseTimeSeconds.set(
-                    { ...this.monitorLabelValues, window: "1d" },
+                    { ...filteredLabels, window: "1d" },
                     uptime.data24h.avgPing / 1000
                 );
             } catch (e) {
@@ -184,7 +203,7 @@ class Prometheus {
             }
             try {
                 monitorAverageResponseTimeSeconds.set(
-                    { ...this.monitorLabelValues, window: "30d" },
+                    { ...filteredLabels, window: "30d" },
                     uptime.data30d.avgPing / 1000
                 );
             } catch (e) {
@@ -192,24 +211,24 @@ class Prometheus {
             }
             try {
                 monitorAverageResponseTimeSeconds.set(
-                    { ...this.monitorLabelValues, window: "365d" },
+                    { ...filteredLabels, window: "365d" },
                     uptime.data1y.avgPing / 1000
                 );
             } catch (e) {
                 log.error("prometheus", "Caught error", e);
             }
             try {
-                monitorUptimeRatio.set({ ...this.monitorLabelValues, window: "1d" }, uptime.data24h.uptime);
+                monitorUptimeRatio.set({ ...filteredLabels, window: "1d" }, uptime.data24h.uptime);
             } catch (e) {
                 log.error("prometheus", "Caught error", e);
             }
             try {
-                monitorUptimeRatio.set({ ...this.monitorLabelValues, window: "30d" }, uptime.data30d.uptime);
+                monitorUptimeRatio.set({ ...filteredLabels, window: "30d" }, uptime.data30d.uptime);
             } catch (e) {
                 log.error("prometheus", "Caught error", e);
             }
             try {
-                monitorUptimeRatio.set({ ...this.monitorLabelValues, window: "365d" }, uptime.data1y.uptime);
+                monitorUptimeRatio.set({ ...filteredLabels, window: "365d" }, uptime.data1y.uptime);
             } catch (e) {
                 log.error("prometheus", "Caught error", e);
             }
@@ -217,7 +236,7 @@ class Prometheus {
 
         if (heartbeat) {
             try {
-                monitorStatus.set(this.monitorLabelValues, heartbeat.status);
+                monitorStatus.set(filteredLabels, heartbeat.status);
             } catch (e) {
                 log.error("prometheus", "Caught error");
                 log.error("prometheus", e);
@@ -225,10 +244,10 @@ class Prometheus {
 
             try {
                 if (typeof heartbeat.ping === "number") {
-                    monitorResponseTime.set(this.monitorLabelValues, heartbeat.ping);
+                    monitorResponseTime.set(filteredLabels, heartbeat.ping);
                 } else {
                     // Is it good?
-                    monitorResponseTime.set(this.monitorLabelValues, -1);
+                    monitorResponseTime.set(filteredLabels, -1);
                 }
             } catch (e) {
                 log.error("prometheus", "Caught error");
@@ -242,15 +261,16 @@ class Prometheus {
      * @returns {void}
      */
     remove() {
+        const filteredLabels = this.filterLabels(this.monitorLabelValues);
         try {
-            monitorCertDaysRemaining.remove(this.monitorLabelValues);
-            monitorCertIsValid.remove(this.monitorLabelValues);
+            monitorCertDaysRemaining.remove(filteredLabels);
+            monitorCertIsValid.remove(filteredLabels);
             ["1d", "30d", "365d"].forEach((window) => {
-                monitorUptimeRatio.remove({ ...this.monitorLabelValues, window });
-                monitorAverageResponseTimeSeconds.remove({ ...this.monitorLabelValues, window });
+                monitorUptimeRatio.remove({ ...filteredLabels, window });
+                monitorAverageResponseTimeSeconds.remove({ ...filteredLabels, window });
             });
-            monitorResponseTime.remove(this.monitorLabelValues);
-            monitorStatus.remove(this.monitorLabelValues);
+            monitorResponseTime.remove(filteredLabels);
+            monitorStatus.remove(filteredLabels);
         } catch (e) {
             console.error(e);
         }
