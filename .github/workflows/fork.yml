@@ -16,7 +16,7 @@ jobs:
           images: |
             ghcr.io/zimbres/uptime-kuma
           flavor: |
-            latest=false
+            latest=true
           tags: |
             type=ref,event=tag
 
