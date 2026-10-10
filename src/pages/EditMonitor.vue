@@ -2271,6 +2271,9 @@
                                     v-model="monitor.dependency"
                                     :options="dependencyMonitorOptionsList"
                                     :disabled="sortedMonitorList.length === 0"
+                                    :icon="'times'"
+                                    :action="() => { monitor.dependency = null; }"
+                                    :actionAriaLabel="$t('Clear dependency')"
                                 />
                                 <div class="form-text">{{ $t("If this monitor is down or paused, the current monitor will show as Unknown") }}</div>
                             </div>
