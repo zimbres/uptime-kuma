@@ -17,6 +17,7 @@ const { makeBadge } = require("badge-maker");
 const { Prometheus } = require("../prometheus");
 const { UptimeCalculator } = require("../uptime-calculator");
 const { Settings } = require("../settings");
+const { apiAuth } = require("../auth");
 
 let router = express.Router();
 
@@ -604,6 +605,58 @@ function determineStatus(status, previousHeartbeat, maxretries, isUpsideDown, be
         }
     }
 }
+
+/**
+ * GET /api/monitors
+ * Returns all monitors with authentication (same as /metrics)
+ */
+router.get("/api/monitors", apiAuth, async (request, response) => {
+    try {
+        // Get user ID from basic auth
+        const auth = request.headers.authorization;
+        let userID = 1; // Default to first user if no auth (for backward compatibility)
+        
+        if (auth) {
+            // Extract username from basic auth
+            const encoded = auth.split(" ")[1];
+            const decoded = Buffer.from(encoded, "base64").toString();
+            const username = decoded.split(":")[0];
+            
+            // Find user by username
+            const user = await R.findOne("user", "TRIM(username) = ?", [username.trim()]);
+            if (user) {
+                userID = user.id;
+            }
+        }
+
+        // Get monitors for the user
+        const monitorList = await R.find("monitor", " user_id = ? ORDER BY weight DESC, name", [userID]);
+
+        const monitorData = monitorList.map((monitor) => ({
+            id: monitor.id,
+            active: monitor.active,
+            name: monitor.name,
+        }));
+        
+        const preloadData = await Monitor.preparePreloadData(monitorData);
+
+        const monitors = monitorList.map((monitor) => {
+            return monitor.toJSON(preloadData, true); // includeSensitiveData = true
+        });
+
+        response.json({
+            Success: true,
+            Data: monitors
+        });
+    } catch (error) {
+        log.error("api", "Error in /api/monitors:", error);
+        response.status(500).json({
+            Success: false,
+            Data: [],
+            Error: error.message
+        });
+    }
+});
 
 /**
  * Check whether a monitor is publc
